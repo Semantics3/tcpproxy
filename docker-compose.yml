@@ -1,0 +1,13 @@
+version: '2'
+services:
+  tcp_proxy:
+    dns: 172.18.0.1
+    image: us.gcr.io/walmart-poc-185310/tcpproxy:latest
+    ports:
+      - "29418:29418"
+    command:
+      - sh
+      - "-c"
+      - "/home/sem3/code/tcpproxy -l  0.0.0.0:29418 -r 54.147.12.5:6379"
+    volumes:
+      - "/home/sem3/logs:/home/sem3/logs"
