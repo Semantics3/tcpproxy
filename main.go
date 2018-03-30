@@ -9,9 +9,8 @@ import (
 
 func main() {
 	var (
-		listenAddr     = flag.String("l", "", "local address to listen on")
-		remoteAddr     = flag.String("r", "", "remote address to dial")
-		logConnections = flag.Bool("logconn", false, "log connections")
+		listenAddr = flag.String("l", "", "local address to listen on")
+		remoteAddr = flag.String("r", "", "remote address to dial")
 	)
 
 	flag.Parse()
@@ -24,23 +23,20 @@ func main() {
 		log.Fatalf("must supply remote address to dial, -r option")
 	}
 
+	log.Printf("Starting TCP proxy at: %v\n", *listenAddr)
 	ln, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
 		log.Fatalf("listening: %v", err)
 	}
 
-	proxy(ln, *remoteAddr, *logConnections)
+	listen(ln, *remoteAddr)
 }
 
-func proxy(ln net.Listener, remoteAddr string, logConnections bool) error {
+func listen(ln net.Listener, remoteAddr string) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			return err
-		}
-
-		if logConnections {
-			log.Printf("connected: %s", conn.RemoteAddr())
 		}
 
 		go handle(conn, remoteAddr)
@@ -50,26 +46,22 @@ func proxy(ln net.Listener, remoteAddr string, logConnections bool) error {
 func handle(conn net.Conn, remoteAddr string) {
 	defer conn.Close()
 
+	log.Printf("connected: %s", conn.RemoteAddr())
 	rconn, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
 		log.Printf("dialing remote: %v", err)
 		return
 	}
-	defer rconn.Close()
 
-	copy(conn, rconn)
+	defer rconn.Close()
+	errc := make(chan error)
+	go copyFrom(conn, rconn, errc)
+	go copyFrom(rconn, conn, errc)
+	err = <-errc
+	log.Printf("disconnected: %s, %v", conn.RemoteAddr(), err)
 }
 
-func copy(a, b io.ReadWriter) {
-	done := make(chan struct{})
-	go func() {
-		io.Copy(a, b)
-		done <- struct{}{}
-	}()
-	go func() {
-		io.Copy(b, a)
-		done <- struct{}{}
-	}()
-	<-done
-	<-done
+func copyFrom(a, b io.ReadWriter, errc chan<- error) {
+	_, err := io.Copy(a, b)
+	errc <- err
 }
